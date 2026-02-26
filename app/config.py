@@ -34,15 +34,27 @@ def save_config():
 # 全局 Redis 连接池（单例）
 _redis_pool = None
 
+def _redis_config():
+    """Redis 配置：优先使用环境变量（便于 Docker 等场景连接外部 Redis），否则读配置文件"""
+    cfg = get_config()["redis"]
+    return {
+        "host": os.environ.get("REDIS_HOST", cfg["REDIS_HOST"]),
+        "port": int(os.environ.get("REDIS_PORT", cfg["REDIS_PORT"])),
+        "db": int(os.environ.get("REDIS_DB", cfg["REDIS_DB"])),
+        "password": os.environ.get("REDIS_PASSWORD", cfg.get("REDIS_PASSWORD")),
+    }
+
+
 async def get_redis_pool():
     """获取 Redis 连接池（单例模式）"""
     global _redis_pool
     if _redis_pool is None:
+        r = _redis_config()
         _redis_pool = redis.ConnectionPool(
-            host=config["redis"]["REDIS_HOST"],
-            port=config["redis"]["REDIS_PORT"],
-            db=config["redis"]["REDIS_DB"],
-            password=config["redis"].get("REDIS_PASSWORD", None),
+            host=r["host"],
+            port=r["port"],
+            db=r["db"],
+            password=r["password"],
             decode_responses=True,
             max_connections=20,
             retry_on_timeout=True,

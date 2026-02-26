@@ -10,4 +10,6 @@ REDIS_DB = 0
 REDIS_PASSWORD = "zurl"
 
 [app]
+# 非根目录部署时填写，如 "/zurl"；留空表示根目录
+BASE_URL = ""
 DENY_UA = [ "MicroMessenger", "QQ", "MQQBrowser"]

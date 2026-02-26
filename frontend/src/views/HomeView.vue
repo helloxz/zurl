@@ -109,12 +109,15 @@
 </template>
 
 <script setup>
-import { ref, computed,onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import req from '@/utils/req'
 import { ElMessage } from 'element-plus'
 import { useSiteStore } from '@/stores/site'
 import { useBaseStore } from '@/stores/base'
 import { useI18n } from 'vue-i18n'
+
+const router = useRouter()
 
 const { t, locale } = useI18n()
 
@@ -122,7 +125,6 @@ const formRef = ref(null)
 const loading = ref(false)
 const showAdvanced = ref(false)
 const result = ref(null)
-const is_login = ref(false)
 
 const siteStore = useSiteStore()
 const baseStore = useBaseStore()
@@ -133,37 +135,19 @@ const siteInfo = ref({
   footer:""
 })
 
-// 获取token
-const getIsLogin = ()=>{
-    let status = siteStore.is_login
-    if (status === false) {
-        req.get("/api/user/is_login")
-        .then(res => {
-            if (res.data.code === 200) {
-                siteStore.is_login = true
-            } else {
-                siteStore.is_login = false
-            }
-        })
-        .catch(err => {
-            // console.error(err)
-            siteStore.is_login = false
-        })
-    }
-    
-}
-
-// 定义基础 URL
+// 定义基础 URL（支持非根目录部署）
 const baseUrl = computed(() => {
   if (typeof window !== 'undefined') {
-    return window.location.origin
+    const base = (window.__BASE_PATH__ || import.meta.env.VITE_BASE_URL || '').replace(/\/$/, '')
+    return base ? `${window.location.origin}${base}` : window.location.origin
   }
   return ''
 })
 
-// 获取主域名
+// 获取主域名（含 base path 时显示为 host/path）
 const getMainDomain = () => {
-  return window.location.host;
+  const base = (window.__BASE_PATH__ || import.meta.env.VITE_BASE_URL || '').replace(/\/$/, '')
+  return base ? `${window.location.host}${base}` : window.location.host
 }
 
 const formData = ref({
@@ -172,70 +156,99 @@ const formData = ref({
   title: ''
 })
 
+// 短链接仅允许：大小写字母、数字、-_@#$%^&*，禁止 / 或 \
+const shortUrlValidator = (_rule, value, callback) => {
+  if (!value || !String(value).trim()) {
+    callback()
+    return
+  }
+  const v = String(value).trim()
+  if (/\/|\\/.test(v)) {
+    callback(new Error(t('invalid.short.url.slash')))
+    return
+  }
+  if (!/^[a-zA-Z0-9_\-@#$%^&*]{1,32}$/.test(v)) {
+    callback(new Error(t('invalid.short.url')))
+    return
+  }
+  callback()
+}
+
 const rules = {
   long_url: [
     { required: true, message: t('home.long_url.required'), trigger: 'blur' },
     { type: 'url', message: t('home.long_url.url'), trigger: 'blur' }
+  ],
+  short_url: [
+    { validator: shortUrlValidator, trigger: 'blur' }
   ]
 }
 
-onMounted(() => {
-  getIsLogin()
-  getSetting()
+onMounted(async () => {
+  // 先拉取站点配置（含 allow_guest_shorten）
+  await siteStore.getSiteInfo()
+  siteInfo.value.title = siteStore.site_info.title
+  siteInfo.value.footer = siteStore.site_info.footer
+
+  // 未登录时再请求一次确认登录状态
+  if (siteStore.is_login === false) {
+    try {
+      const res = await req.get('/api/user/is_login')
+      siteStore.is_login = res.data?.code === 200
+    } catch {
+      siteStore.is_login = false
+    }
+  }
+
+  // 仅登录用户可创建短链且未登录时，直接跳转登录页
+  if (siteStore.site_info.allow_guest_shorten === false && !siteStore.is_login) {
+    router.push('/login')
+    return
+  }
 })
 
-// 缩短链接
+// 缩短链接（若站点设置为仅登录用户可创建且未登录，则先提示）
 const shortenUrl = () => {
   formRef.value.validate((valid) => {
-    if (valid) {
-      loading.value = true
-      req.post("/api/shorten_url", formData.value)
-        .then(res => {
-          if (res.data.code === 200) {
-            result.value = res.data.data
-            // sElMessage.success("短链接生成成功")
-            // 清空formData
-            formData.value = {
-              long_url: '',
-              short_url: '',
-              title: ''
-            }
-          } else {
-            ElMessage.error(res.data.msg || "生成短链接失败")
-          }
-        })
-        .catch(err => {
-          console.error(err)
-          // 获取http状态码，如果是401，则提示用户登录
-            if (err.response && err.response.status === 401) {
-                ElMessage.error("请先登录！")
-                return
-            }
-            else{
-                ElMessage.error("生成短链接时发生错误！")
-            }
-          
-        })
-        .finally(() => {
-          loading.value = false
-        })
+    if (!valid) return
+    const allowGuest = siteStore.site_info.allow_guest_shorten !== false
+    if (!allowGuest && !siteStore.is_login) {
+      ElMessage.error(t('no.login.msg'))
+      return
     }
+    loading.value = true
+    req.post("/api/shorten_url", formData.value)
+      .then(res => {
+        if (res.data.code === 200) {
+          result.value = res.data.data
+          formData.value = {
+            long_url: '',
+            short_url: '',
+            title: ''
+          }
+        } else {
+          ElMessage.error(t(res.data.msg) || t('link.add.error'))
+        }
+      })
+      .catch(err => {
+        console.error(err)
+        if (err.response && err.response.status === 401) {
+          ElMessage.error(t('no.login.msg'))
+          return
+        }
+        ElMessage.error(t('link.add.error'))
+      })
+      .finally(() => {
+        loading.value = false
+      })
   })
 }
 
-// 获取网站标题
-const getSetting = ()=>{
-    siteStore.getSiteInfo()
-    .then(res=>{
-        siteInfo.value.title = siteStore.site_info.title
-        siteInfo.value.footer = siteStore.site_info.footer
-    })
-}
-
-
-// 生成完整的短链接 URL
+// 生成完整的短链接 URL（含 base path）
 const getShortUrl = (shortUrl) => {
-  return `${baseUrl.value}/${shortUrl}`
+  const base = (window.__BASE_PATH__ || import.meta.env.VITE_BASE_URL || '').replace(/\/$/, '')
+  const path = base ? `${base}/${shortUrl}` : shortUrl
+  return base ? `${window.location.origin}${path}` : `${window.location.origin}/${shortUrl}`
 }
 </script>
 

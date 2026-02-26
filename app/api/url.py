@@ -15,6 +15,7 @@ import time
 from app.models.conn import get_db
 from pydantic import BaseModel,HttpUrl
 from app.models.urls import Urls
+from app.models.options import Options
 import json
 import re
 
@@ -24,6 +25,7 @@ class UrlItem(BaseModel):
     title: str = None
     description: str = None
     ttl_days: int = 0  # 过期天数，0表示不过期
+    is_active: int = 1  # 1=启用，0=禁用
 
 class UrlSearchItem(BaseModel):
     filter: str
@@ -35,13 +37,29 @@ class UrlDeleteItem(BaseModel):
 # 限制的短链接名称
 DENY_SHORT_URLS = ["api","init", "admin", "login", "logout", "register", "import", "export"]
 
+# 短链接允许的字符：大小写字母、数字、-_@#$%^&* 等 URL 安全字符，禁止 / 或 \
+SHORT_URL_PATTERN = re.compile(r"^[a-zA-Z0-9_\-@#$%^&*]{1,32}$")
+
 class UrlAPI:
     def __init__(self):
         # 用于保存后台任务的集合，防止任务被垃圾回收
         self._background_tasks = set()
 
-    # 缩短URL
-    async def shorten_url(self, item: UrlItem, request: Request):
+    # 缩短URL（session 为可选：当站点设置“允许未登录创建短链”为否时，必须已登录）
+    async def shorten_url(self, item: UrlItem, request: Request, session=None):
+        # 站点设置：是否允许未登录用户创建短链，默认为 True
+        allow_guest = True
+        try:
+            site_str = Options.get_option("site_info")
+            if site_str:
+                info = json.loads(site_str)
+                if isinstance(info, dict) and "allow_guest_shorten" in info:
+                    allow_guest = bool(info.get("allow_guest_shorten", True))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        if not allow_guest and session is None:
+            return show_json(401, "no.login.msg", {})
+
         # 获取当前时间戳
         current_time = int(time.time())
         created_at = current_time
@@ -57,12 +75,16 @@ class UrlAPI:
         if not item.short_url:
             item.short_url = random_string(4).lower()  # 生成一个随机的短链接
         else:
-            item.short_url = item.short_url.strip().lower()
-            # 正则验证short_url是否合法，只能是小写字母或数字或中横线、下划线组合，不超过32位
-            if not re.match(r"^[a-z0-9_-]{1,32}$", item.short_url):
+            item.short_url = item.short_url.strip()
+            # 禁止包含 / 或 \
+            if "/" in item.short_url or "\\" in item.short_url:
                 return show_json(400, "invalid.short.url", {})
-            # 检查短链接是否在限制列表中
-            if item.short_url in DENY_SHORT_URLS:
+            # 只允许大小写字母、数字、-_@#$%^&* 等 URL 安全字符，1-32 位
+            if not SHORT_URL_PATTERN.match(item.short_url):
+                return show_json(400, "invalid.short.url", {})
+            item.short_url = item.short_url  # 保留用户输入大小写存储
+            # 检查短链接是否在限制列表中（比较时转小写）
+            if item.short_url.lower() in DENY_SHORT_URLS:
                 return show_json(400, "reserved.short.url", {})
 
         # 如果标题是空的，则使用长链接剔除协议和路径作为标题
@@ -86,7 +108,7 @@ class UrlAPI:
         if item.ttl_days and item.ttl_days > 0:
             expires_at = current_time + item.ttl_days * 86400
         
-        # 创建新的Url对象
+        # 创建新的Url对象（显式设置 is_active=1，与旧版迁移兼容）
         url = Urls(
             short_url=item.short_url,
             long_url=long_url,
@@ -95,7 +117,8 @@ class UrlAPI:
             created_at=created_at,
             updated_at=updated_at,
             expires_at=expires_at,
-            ip=ip
+            ip=ip,
+            is_active=1,
         )
 
         # 将新创建的Url对象保存到数据库
@@ -173,6 +196,14 @@ class UrlAPI:
                 context={"request": request},
                 status_code=404
             )
+
+        # 若已禁用，返回404
+        if getattr(row, "is_active", 1) == 0:
+            return templates.TemplateResponse(
+                name="error_pages/404.html",
+                context={"request": request},
+                status_code=404
+            )
         
         # 如果设置了过期时间，且当前时间已经超过过期时间，返回404
         if row.expires_at and row.expires_at > 0 and int(time.time()) > row.expires_at:
@@ -223,7 +254,8 @@ class UrlAPI:
                 created_at=timestamp,
                 updated_at=timestamp,
                 ip=data["ip"],
-                clicks=data.get("clicks", 0)
+                clicks=data.get("clicks", 0),
+                is_active=1,
             )
             # 将新创建的Url对象保存到数据库
             db.add(url)
@@ -376,6 +408,17 @@ class UrlAPI:
 
     # 更新短链接信息
     def update_url(self, id:int,item: UrlItem):
+        # 校验短链接格式：禁止 / 或 \，只允许大小写字母、数字、-_@#$%^&*
+        if item.short_url:
+            raw = item.short_url.strip()
+            if "/" in raw or "\\" in raw:
+                return show_json(400, "invalid.short.url", {})
+            if not SHORT_URL_PATTERN.match(raw):
+                return show_json(400, "invalid.short.url", {})
+            if raw.lower() in DENY_SHORT_URLS:
+                return show_json(400, "reserved.short.url", {})
+            item.short_url = raw
+
         db = next(get_db())
         url = Urls.get_by_id(db, id)
 
@@ -386,11 +429,13 @@ class UrlAPI:
         if item.short_url != url.short_url and Urls.check_short_url_exists(db, item.short_url):
             return show_json(400, f"ShortURL {item.short_url} Already exists", {})
         
-        # 更新长链接、标题和描述
+        # 更新长链接、标题、描述、启用状态
         url.long_url = item.long_url
         url.title = item.title
         url.short_url = item.short_url
-        url.description = item.description
+        url.description = item.description or ""
+        if item.is_active is not None:
+            url.is_active = 1 if item.is_active else 0
         url.updated_at = int(time.time())
         
         db.commit()

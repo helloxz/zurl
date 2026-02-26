@@ -1,8 +1,16 @@
 import axios from 'axios';
 
+// 支持非根目录部署：优先使用服务端注入的 __BASE_PATH__，否则使用构建时 VITE_BASE_URL
+function getBaseURL() {
+  if (typeof window !== 'undefined' && window.__BASE_PATH__ !== undefined && window.__BASE_PATH__ !== '') {
+    return String(window.__BASE_PATH__).replace(/\/$/, '');
+  }
+  const env = import.meta.env.VITE_BASE_URL || import.meta.env.VITE_API_URL || '';
+  return String(env).replace(/\/$/, '') || '';
+}
+
 const req = axios.create({
-  baseURL: import.meta.env.VITE_API_URL, // 对于 Vite
-  // baseURL: process.env.VUE_APP_API_BASE_URL || '/', // 对于 Vue CLI
+  baseURL: getBaseURL(),
   timeout: 30000,
 });
 

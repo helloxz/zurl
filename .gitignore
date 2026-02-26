@@ -2,3 +2,6 @@ myenv
 __pycache__
 app/data
 notice.txt
+
+.venv
+data/
