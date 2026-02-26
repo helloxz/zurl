@@ -4,7 +4,7 @@ from app.api.option import OptionAPI
 from app.api.sys import SysAPI
 from app.api.user import UserAPI, UserItem
 from app.api.url import *
-from app.middleware.auth import get_current_session
+from app.middleware.auth import get_current_session, get_current_session_optional
 from app.models.sessions import Sessions
 from app.middleware.click import update_click_counts
 from app.middleware.deny import deny_uas
@@ -39,10 +39,10 @@ async def redirect_to_long_url(
 async def login(username: str = Form(...), password: str = Form(...), request: Request = None):
     return userAPI.login(username=username, password=password, request=request)
 
-# 短链接接口
+# 短链接接口（会话可选：根据站点设置“允许未登录创建短链”决定是否必须登录）
 @router.post("/api/shorten_url")
-async def shorten_url(item: UrlItem, request: Request,session = Depends(get_current_session)):
-    return await urlAPI.shorten_url(item=item, request=request)
+async def shorten_url(item: UrlItem, request: Request, session=Depends(get_current_session_optional)):
+    return await urlAPI.shorten_url(item=item, request=request, session=session)
 
 # 导入接口
 @router.post("/api/import")

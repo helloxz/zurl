@@ -1,0 +1,12 @@
+# 避免将本地无关文件加入构建上下文
+.venv
+venv
+__pycache__
+*.pyc
+.git
+.github
+node_modules
+frontend/node_modules
+data
+*.md
+.dockerignore

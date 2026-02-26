@@ -85,6 +85,12 @@
                     <span>{{siteStore.formatDateTime(row.expires_at)}}</span>
                 </template>
             </el-table-column>
+
+            <el-table-column prop="is_active" :label="$t('link.enabled')" width="90">
+                <template #default="{row}">
+                    <el-tag :type="row.is_active === 1 ? 'success' : 'info'">{{ row.is_active === 1 ? $t('link.enabled.yes') : $t('link.enabled.no') }}</el-tag>
+                </template>
+            </el-table-column>
            
             <el-table-column fixed="right" :label="$t('actions')" min-width="90">
             <template #default="scope">
@@ -159,9 +165,10 @@ const search = ref({
     keyword: ''
 })
 
-// 复制短链接
+// 复制短链接（支持非根目录部署）
 const copyShortUrl = (shortUrl) => {
-    let url = window.location.protocol + '//' + window.location.host + '/' + shortUrl
+    const base = (window.__BASE_PATH__ || import.meta.env.VITE_BASE_URL || '').replace(/\/$/, '')
+    const url = window.location.protocol + '//' + window.location.host + (base ? base + '/' : '/') + shortUrl
     baseStore.copyText(url)
 }
 
@@ -223,7 +230,8 @@ const handleFinish = ()=>{
         short_url: '',
         title: '',
         clicks: 0,
-        updated_at: ''
+        updated_at: '',
+        is_active: 1
     }
     getPosts()
 }
@@ -236,7 +244,8 @@ const handleClose = ()=>{
         short_url: '',
         title: '',
         clicks: 0,
-        updated_at: ''
+        updated_at: '',
+        is_active: 1
     }
 }
 
@@ -246,7 +255,8 @@ const linkInfo = ref({
     short_url: '',
     title: '',
     clicks: 0,
-    updated_at: ''
+    updated_at: '',
+    is_active: 1
 })
 
 // 分页信息
@@ -266,7 +276,8 @@ const addLink = ()=>{
         short_url: '',
         title: '',
         clicks: 0,
-        updated_at: ''
+        updated_at: '',
+        is_active: 1
     }
 }
 

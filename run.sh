@@ -5,49 +5,29 @@ ARG1=$1
 # 数据库路径
 DB_PATH="/opt/zurl/app/data/db"
 
-# 启动redis
-runRedis(){
-    redis-server app/config/redis.conf --daemonize yes
-    # 检查 Redis 是否启动成功
-    if [ $? -eq 0 ]; then
-        echo "Redis started successfully."
-    else
-        echo "Failed to start Redis."
-        exit 1
-    fi
-}
-
-# 检查数据库路径是否存在，如果不存在则创建
+# 检查数据库路径是否存在
 exist_db(){
     if [ ! -d "$DB_PATH" ]; then
         mkdir -p "$DB_PATH"
     fi
 }
 
-
-# 启动主进程
+# 启动主进程（Redis 由 docker-compose 等单独启动，或通过 REDIS_HOST 等环境变量连接）
 runMain(){
-    # 获取环境变量WORKERS
     WORKERS=${WORKERS}
-    # 判断变量是否存在
     if [ -z "$WORKERS" ]; then
         WORKERS=1
     fi
-    # 启动主进程
-    source myenv/bin/activate
-    # 执行数据库迁移
+    . myenv/bin/activate
     alembic upgrade head
     uvicorn app.main:app --workers ${WORKERS} --host 0.0.0.0 --port 3080
 }
 
-# 获取第一个参数，如果不存在，则执行下面的命令，如果为dev则执行另外的命令
 if [ -z "$ARG1" ]; then
-    runRedis && exist_db && runMain
+    exist_db && runMain
 elif [ "$ARG1" = "dev" ]; then
-    # exist_db
     echo "Running in development mode..."
-    source myenv/bin/activate
-    # 执行数据库迁移
+    . myenv/bin/activate
     alembic upgrade head
     uvicorn app.main:app --reload --host 0.0.0.0 --port 3080
 else

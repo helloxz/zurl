@@ -5,17 +5,15 @@ install_deps(){
     apk update
     apk add python3
     apk add py3-pip
-    mkdir -p  /opt/zurl && cd /opt/zurl
     mkdir -p /opt/zurl/app/data/db
 }
 
 # 安装 Python 依赖
 install_python_deps(){
     python3 -m venv myenv
-    source myenv/bin/activate
+    . myenv/bin/activate
     pip3 install -r app/requirements.txt
 }
-
 
 # 清理缓存，缩小镜像体积
 clean(){

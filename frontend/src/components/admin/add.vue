@@ -23,6 +23,11 @@
                 <el-input v-model="formData.title"></el-input>
             </el-form-item>
 
+            <el-form-item :label="$t('link.enabled')" v-if="props.utype === 'edit'">
+                <el-switch v-model="formData.is_active" :active-value="1" :inactive-value="0" />
+                <span class="form-hint">{{ formData.is_active ? $t('link.enabled.yes') : $t('link.enabled.no') }}</span>
+            </el-form-item>
+
             <el-form-item :label="$t('validity.period.days')" v-if="props.utype === 'add'">
                 <el-input v-model="formData.ttl_days" type="number" :placeholder="$t('validity.period.days.placeholder')"></el-input>
             </el-form-item>
@@ -55,13 +60,36 @@ const formData = ref({
     long_url: '',
     short_url: '',
     title: '',
-    ttl_days: 0
+    ttl_days: 0,
+    is_active: 1
 })
+// 短链接仅允许：大小写字母、数字、-_@#$%^&*，禁止 / 或 \
+const shortUrlValidator = (_rule, value, callback) => {
+    if (!value || !String(value).trim()) {
+        callback()
+        return
+    }
+    const v = String(value).trim()
+    if (/\/|\\/.test(v)) {
+        callback(new Error(t('invalid.short.url.slash')))
+        return
+    }
+    if (!/^[a-zA-Z0-9_\-@#$%^&*]{1,32}$/.test(v)) {
+        callback(new Error(t('invalid.short.url')))
+        return
+    }
+    callback()
+}
+
 const rules = {
     long_url: [
         { required: true, message: t('long.url.required'), trigger: 'blur' },
         { type: 'url', message: t('long.url.invalid'), trigger: 'blur' }
-    ]}
+    ],
+    short_url: [
+        { validator: shortUrlValidator, trigger: 'blur' }
+    ]
+}
 
 // 添加链接函数
 const addLink = () => {
@@ -103,7 +131,8 @@ const updateLink = () => {
                 description: "",
                 long_url: formData.value.long_url,
                 short_url: formData.value.short_url,
-                title: formData.value.title
+                title: formData.value.title,
+                is_active: formData.value.is_active !== undefined ? formData.value.is_active : 1
             }
             req.post("/api/update_url/" + formData.value.id, dataToUpdate)
             .then(res => {
@@ -134,7 +163,9 @@ const resetForm = () => {
     formData.value = {
         long_url: '',
         short_url: '',
-        title: ''
+        title: '',
+        ttl_days: 0,
+        is_active: 1
     }
 }
 

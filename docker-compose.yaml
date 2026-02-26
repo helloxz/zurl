@@ -1,11 +1,30 @@
-version: '3.8'
-
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: zurl-redis
+    restart: always
+    command: redis-server --requirepass zurl
+    volumes:
+      - ./redis/data:/data
+
   zurl:
     container_name: zurl
+    build:
+      context: .
+      args:
+        # 与下方 environment.BASE_URL 保持一致，供前端构建时 VITE_BASE_URL 使用
+        - BASE_URL=${BASE_URL:-}
     image: helloz/zurl
     ports:
       - "3080:3080"
     restart: always
+    environment:
+      - BASE_URL=${BASE_URL:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=zurl
     volumes:
       - ./data:/opt/zurl/app/data
+    depends_on:
+      - redis

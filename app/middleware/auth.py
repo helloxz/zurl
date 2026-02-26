@@ -25,3 +25,21 @@ async def get_current_session(request: Request):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     return session
+
+
+async def get_current_session_optional(request: Request):
+    """可选会话：有有效 token 则返回 session，否则返回 None。用于允许未登录访问的接口（如按配置决定是否要求登录的 shorten）。"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header.split(" ")[1].strip()
+    if not token:
+        return None
+    db = next(get_db())
+    try:
+        session = db.query(Sessions).filter(Sessions.token == token).first()
+        if session and session.expires_at >= int(time.time()):
+            return session
+    finally:
+        db.close()
+    return None

@@ -22,41 +22,82 @@ Zurl is a simple and practical short URL system that can quickly generate short 
 * [x] Custom site information
 * [x] API Token management
 * [x] Bilingual support (Chinese and English)
+* [x] Subpath deployment (BASE_URL) for reverse proxy
 * [ ] Advanced analytics
 * [ ] Login session management
 
 ## Installing Zurl
 
-> Currently only Docker installation is supported. Please ensure you have Docker and Docker Compose installed.
+> Docker deployment is supported. Please ensure you have Docker and Docker Compose installed. Zurl requires Redis for delayed click counting; the project provides a `docker-compose.yaml` that runs both Zurl and Redis.
 
-Create a new `docker-compose.yaml` file with the following content:
+**Clone the repo and run with Docker Compose (recommended):**
+
+```bash
+git clone https://github.com/helloxz/zurl.git && cd zurl
+```
+
+Use the included `docker-compose.yaml`. Optional: set subpath via env (e.g. `BASE_URL=/s` for `http://IP:3080/s`):
 
 ```yaml
-version: '3.8'
-
+# docker-compose.yaml (in project root)
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: zurl-redis
+    restart: always
+    command: redis-server --requirepass zurl
+    volumes:
+      - ./redis/data:/data
+
   zurl:
     container_name: zurl
+    build:
+      context: .
+      args:
+        - BASE_URL=${BASE_URL:-}
     image: helloz/zurl
     ports:
       - "3080:3080"
     restart: always
+    environment:
+      - BASE_URL=${BASE_URL:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=zurl
     volumes:
       - ./data:/opt/zurl/app/data
+    depends_on:
+      - redis
 ```
 
-Run `docker-compose up -d` to start, then visit `http://IP:3080` and follow the prompts to complete initialization!
+Then run:
+
+```bash
+docker compose up -d --build
+```
+
+Visit `http://IP:3080` (or `http://IP:3080/<BASE_URL>` if you set `BASE_URL`) and follow the prompts to complete initialization.
+
+**Using pre-built image only:**  
+Use the same `zurl` service block but set `build` to use image `helloz/zurl`, and either run Redis via the same compose or set `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` to point to an existing Redis instance.
 
 **Upgrade**
 
-1. Backup the data in the current mounted directory
-2. Stop and remove the current container: `docker-compose down`
-3. Pull the latest image: `docker-compose pull`
-4. Recreate and start the container: `docker-compose up -d`
+1. Backup the data in the current mounted directory (and Redis data if needed).
+2. Stop and remove the current containers: `docker compose down`
+3. Pull the latest image or rebuild: `docker compose pull` or `docker compose build --pull`
+4. Recreate and start: `docker compose up -d`
 
-> Note: Please be sure to backup your data before upgrading. You are responsible for any data risks caused by upgrades!
+> Note: Please backup your data before upgrading. You are responsible for any data risks caused by upgrades!
 
 ## Configuration
+
+**Redis**  
+Redis is required. In Docker, it is configured via environment variables: `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`. You can also set these in `config.toml` under the `[redis]` section when not using env vars.
+
+**Subpath (BASE_URL)**  
+For deployment under a subpath (e.g. `/zurl`), set `BASE_URL` in the environment or in `config.toml` under `app.BASE_URL` (e.g. `BASE_URL = "/zurl"`). Rebuild the frontend with the same base if you build from source.
 
 **UA Blocking**
 

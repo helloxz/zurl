@@ -22,48 +22,89 @@ Zurl 是一款简单且实用的短链接系统，可以快速生成短链接，
 * [x] 自定义站点信息
 * [x] API Token管理
 * [x] 中英文双语支持
+* [x] 子路径部署（BASE_URL），便于反向代理
 * [ ] 高级分析
 * [ ] 登录会话管理
 
 ## 安装Zurl
 
-> 目前仅支持Docker安装，请确保您已经安装Docker和Docker Compose
+> 支持 Docker 部署，请确保已安装 Docker 与 Docker Compose。Zurl 依赖 Redis 做延迟计数，项目提供的 `docker-compose.yaml` 会同时启动 Zurl 与 Redis。
 
-新建`docker-compose.yaml`文件，内容如下：
+**克隆仓库并使用 Docker Compose 运行（推荐）：**
+
+```bash
+git clone https://github.com/helloxz/zurl.git && cd zurl
+```
+
+使用项目自带的 `docker-compose.yaml`。如需子路径部署，可设置环境变量（如 `BASE_URL=/s` 则访问地址为 `http://IP:3080/s`）：
 
 ```yaml
-version: '3.8'
-
+# 项目根目录下的 docker-compose.yaml
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: zurl-redis
+    restart: always
+    command: redis-server --requirepass zurl
+    volumes:
+      - ./redis/data:/data
+
   zurl:
     container_name: zurl
+    build:
+      context: .
+      args:
+        - BASE_URL=${BASE_URL:-}
     image: helloz/zurl
     ports:
       - "3080:3080"
     restart: always
+    environment:
+      - BASE_URL=${BASE_URL:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=zurl
     volumes:
       - ./data:/opt/zurl/app/data
+    depends_on:
+      - redis
 ```
 
-输入`docker-compose up -d`启动，然后访问`http://IP:3080` 根据提示完成初始化！
+然后执行：
+
+```bash
+docker compose up -d --build
+```
+
+访问 `http://IP:3080`（若设置了 `BASE_URL` 则为 `http://IP:3080/<BASE_URL>`），按提示完成初始化。
+
+**仅使用预构建镜像：**  
+保留上述 `zurl` 服务配置，可不写 `build` 仅用镜像 `helloz/zurl`，并单独启动 Redis 或在环境中配置 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 指向已有 Redis。
 
 **升级**
 
-1. 备份当前挂载目录的数据
-2. 停止并删除当前容器：`docker-compose down`
-3. 拉取最新镜像：`docker-compose pull`
-4. 重新创建并启动容器：`docker-compose up -d`
+1. 备份当前挂载目录的数据（如有 Redis 数据也请备份）。
+2. 停止并删除当前容器：`docker compose down`
+3. 拉取最新镜像或重新构建：`docker compose pull` 或 `docker compose build --pull`
+4. 重新创建并启动：`docker compose up -d`
 
 > 注意：升级前请务必备份数据，升级造成的数据风险由您自行承担！
 
 ## 设置
 
+**Redis**  
+Zurl 依赖 Redis。在 Docker 中通过环境变量配置：`REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_PASSWORD`。未使用环境变量时，可在挂载目录下的 `config.toml` 中配置 `[redis]` 段。
+
+**子路径（BASE_URL）**  
+若部署在子路径（如 `/zurl`），请设置环境变量 `BASE_URL` 或在 `config.toml` 的 `app.BASE_URL` 中填写（如 `BASE_URL = "/zurl"`）。从源码构建时需使用相同 base 重新构建前端。
+
 **UA屏蔽**
 
 可以在挂载目录下找到`config.toml`中的`app.DENY_UA`添加需要屏蔽的User-Agent，默认屏蔽：
 
-* *信
-* *Q
+* *微信
+* *QQ
 
 > 注意：修改配置后需要重启容器！
 

@@ -41,6 +41,8 @@ class OptionAPI:
                 site_info = json.loads(site_info)
             except (TypeError, ValueError):
                 return show_json(500, "Site info invalid JSON")
-        # 如果已经是 dict/list 等结构，直接返回
+        # 确保返回的站点信息包含 allow_guest_shorten，缺失时默认为 True
+        if isinstance(site_info, dict) and "allow_guest_shorten" not in site_info:
+            site_info = {**site_info, "allow_guest_shorten": True}
         return show_json(200, "success", site_info)
     

@@ -28,6 +28,11 @@
                         <el-input type="textarea" :placeholder="$t('setting.footer.placeholder')" v-model="siteForm.footer"></el-input>
                     </el-form-item>
 
+                    <el-form-item :label="$t('setting.allow_guest_shorten')">
+                        <el-switch v-model="siteForm.allow_guest_shorten" :active-value="true" :inactive-value="false" />
+                        <span class="form-hint">{{ siteForm.allow_guest_shorten ? $t('setting.allow_guest_shorten.yes') : $t('setting.allow_guest_shorten.no') }}</span>
+                    </el-form-item>
+
                     <el-form-item>
                         <el-button @click="setSite" type="primary">{{ $t('save') }}</el-button>
                     </el-form-item>
@@ -39,10 +44,11 @@
 </template>
 
 <script setup>
-import {ref,onMounted,reactive} from 'vue'
-import req, { toForm } from '@/utils/req';
-import { useSiteStore } from '@/stores/site';
+import { ref, onMounted, reactive } from 'vue'
+import req, { toForm } from '@/utils/req'
+import { useSiteStore } from '@/stores/site'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 
 const { t, locale } = useI18n()
 
@@ -57,7 +63,8 @@ const siteForm = ref({
     keywords: "",
     description: "",
     header: "",
-    footer: ""
+    footer: "",
+    allow_guest_shorten: true
 })
 
 // 校验规则
@@ -83,7 +90,8 @@ const setSite = ()=>{
                 "keywords": siteForm.value.keywords,
                 "description": siteForm.value.description,
                 "header": siteForm.value.header,
-                "footer": siteForm.value.footer
+                "footer": siteForm.value.footer,
+                "allow_guest_shorten": siteForm.value.allow_guest_shorten !== false
             }
             const dataContent = {
                 "key":"site_info",
@@ -116,11 +124,18 @@ const setSite = ()=>{
     });
 }
 
-// 获取配置信息
-const getSetting = ()=>{
-    siteStore.getSiteInfo()
-    .then(res=>{
-        siteForm.value = siteStore.site_info
+// 获取配置信息（合并默认值，保证 allow_guest_shorten 等新字段有默认值）
+const getSetting = () => {
+    siteStore.getSiteInfo().then(() => {
+        siteForm.value = {
+            title: "",
+            keywords: "",
+            description: "",
+            header: "",
+            footer: "",
+            allow_guest_shorten: true,
+            ...siteStore.site_info,
+        }
     })
 }
 
@@ -130,8 +145,12 @@ onMounted (()=>{
 </script>
 
 <style scoped>
-.setting{
+.setting {
     width: 600px;
-    
+}
+.form-hint {
+    margin-left: 8px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
 }
 </style>

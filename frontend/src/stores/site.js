@@ -15,6 +15,7 @@ export const useSiteStore = defineStore('site',{
             keywords:"",
             author:"",
             footer:"",
+            allow_guest_shorten: true,  // 是否允许未登录用户创建短链，默认 true
         },
     }),
     actions:{
